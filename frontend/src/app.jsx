@@ -4,6 +4,7 @@ import './app.css';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
 import axios from 'axios';
+import * as wjInput from '@grapecity/wijmo.react.input';
 import { FlexGrid, FlexGridColumn } from '@grapecity/wijmo.react.grid';
 import { Globalize } from '@grapecity/wijmo';
 
@@ -11,21 +12,30 @@ class App extends React.Component {
     constructor(props) {
         super(props);
         this._cellElements = {};
+        this.intervalItems = [1, 5, 10, 60];
         this.state = {
             data: [],
             itemPriceHistory: {},
+            interval: 1,
         };
         this.initializeGrid = this.initializeGrid.bind(this);
+        this.intervalItemsChange = this.intervalItemsChange.bind(this);
     }
 
     render() {
+        const changesTitle = "Changes (%) " + this.state.interval + " min" + (this.state.interval === 1 ? "": "s");
         return <div className="container-fluid">
             <h2>Pricing Data</h2>
+            <label>
+                Changes per (mins)
+                <wjInput.ComboBox itemsSource={this.intervalItems} selectedValue={this.state.interval} textChanged={this.intervalItemsChange}/>
+            </label>
             <FlexGrid isReadOnly={true} selectionMode="Row" initialized={this.initializeGrid} itemsSource={this.state.data}>
                 <FlexGridColumn binding="name" header="Event Name" width={200}/>
                 <FlexGridColumn binding="eventDate" header="Event Date" format="hh:mm:ss mm/dd/yyyy" align="center"/>
-                <FlexGridColumn binding="marketPrice" header="Market Price" format="n0"/>
+                <FlexGridColumn binding="marketPrice" header="Market Price" format="n2"/>
                 <FlexGridColumn binding="chart" header="1-day Chart" width={100} format="n2"/>
+                <FlexGridColumn binding="changes" header={changesTitle} format="n2"/>
             </FlexGrid>
         </div>;
     }
@@ -79,14 +89,28 @@ class App extends React.Component {
     _formatCell(cell, item, col, flare) {
         switch (col.binding) {
             case 'chart':
-                this._formatDynamicCell(cell, item, col, 'priceHistory', flare);
-              break;
+                this._formatChartCell(cell, item, col, 'priceHistory', flare);
+                break;
+            case 'changes':
+                this._formatPercentCell(cell, item, col, 'priceHistory', flare);
+                break;
+            case 'marketPrice':
+                this._formatMarketCell(cell, item, col, 'priceHistory', flare);
+                break;
             default:
                 cell.textContent = Globalize.format(item[col.binding], col.format);
                 break;
           }
     }
-    _formatDynamicCell(cell, item, col, history, flare) {
+    _formatMarketCell(cell, item, col, history, flare) {
+        let hist = this.state.itemPriceHistory[item.symbol];
+        if (!hist || hist.length < 2) {
+            hist = item[history];
+        } 
+
+        cell.textContent = Globalize.format(hist[hist.length - 1], col.format);
+    }
+    _formatChartCell(cell, item, col, history, flare) {
         // cell template
         let html = '<div class="ticker chg-{dir} flare-{fdir}"> ' +
             '<div class="spark">{spark}</div>' +
@@ -96,18 +120,55 @@ class App extends React.Component {
         if (!hist || hist.length < 2) {
             hist = item[history];
         } 
+        let chg = hist.length < this.state.interval * 60 ? hist[hist.length - 1] / hist[0] - 1 : hist[hist.length - 1] / hist[hist.length - this.state.interval * 60 - 1] - 1;
+
+        // up/down glyph
+        let glyph = chg > +0.001 ? 'up' : chg < -0.001 ? 'down' : 'circle';
+        // change direction
+        let dir = glyph == 'circle' ? 'none' : glyph;
+        html = html.replace('{dir}', dir);
+        // flare direction
+        let flareDir = flare ? dir : 'none';
+        html = html.replace('{fdir}', flareDir);
+
         // sparklines
         html = html.replace('{spark}', this._getSparklines(hist));
+        // done
+        cell.innerHTML = html;
+    }
+    _formatPercentCell(cell, item, col, history, flare) {
+        // cell template
+        let html = '<div class="ticker chg-{dir} flare-{fdir}"> ' +
+            '<div class="glyph"><span class="wj-glyph-{glyph}"></span></div>' +
+            '<div class="chg">{chg}</div>' +
+            '</div>';
+        // % change
+        let hist = this.state.itemPriceHistory[item.symbol];
+        if (!hist || hist.length < 2) {
+            hist = item[history];
+        }
+        let chg = hist.length < this.state.interval * 60 ? hist[hist.length - 1] / hist[0] - 1 : hist[hist.length - 1] / hist[hist.length - this.state.interval * 60 - 1] - 1;
+        html = html.replace('{chg}', Globalize.format(chg * 100, 'n1') + '%');
+
+        // up/down glyph
+        let glyph = chg > +0.001 ? 'up' : chg < -0.001 ? 'down' : 'circle';
+        html = html.replace('{glyph}', glyph);
+        // change direction
+        let dir = glyph == 'circle' ? 'none' : glyph;
+        html = html.replace('{dir}', dir);
+        // flare direction
+        let flareDir = flare ? dir : 'none';
+        html = html.replace('{fdir}', flareDir);
         // done
         cell.innerHTML = html;
     }
     //
     // update grid cells when items change
     _updateGrid(changedItems) {
-        for (let symbol in changedItems) {
-            let itemCells = this._cellElements[symbol];
+        for (let item in changedItems) {
+            let itemCells = this._cellElements[item.symbol];
             if (itemCells) {
-                let item = itemCells.item;
+                // let item = changedItems[item.symbol];
                 this.flex.columns.forEach((col) => {
                     let cell = itemCells[col.binding];
                     if (cell) {
@@ -122,13 +183,13 @@ class App extends React.Component {
 
         let changedItems = {};
 
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 10; i++) {
             // select an item
             let item = this.state.data[this._randBetween(0, this.state.data.length - 1)];
             // update current data
             if (item) {
-                item.chart = item.chart * (1 + (Math.random() * .10 - .05));
-                item.priceSize = this._randBetween(10, 1000);
+                item.price = item.marketPrice * (1 + (Math.random() * .10 - .05));
+                item.chart = item.price;
                 // update history data
                 let priceHistory = this.state.itemPriceHistory[item.symbol] || [];
                 if (priceHistory) {
@@ -144,7 +205,7 @@ class App extends React.Component {
 
                 //
                 // keep track of changed items
-                changedItems[item.symbol] = true;
+                changedItems[item.symbol] = item;
             }
         }
 
@@ -153,29 +214,37 @@ class App extends React.Component {
         this._updateGrid(changedItems);
         //
         // and schedule the next batch
-        setTimeout(this._updateTrades.bind(this), 100);
+        setTimeout(this._updateTrades.bind(this), 1000);
     }
     // add a value to a history array
     _addHistory(array, data) {
         array.push(data);
-        if (array.length > 10) { // limit history length
+        if (array.length > 3600) { // limit history length
             array.splice(0, 1);
         }
     }
     // generate sparklines as SVG
     _getSparklines(data) {
-        let svg = '', min = Math.min.apply(Math, data), max = Math.max.apply(Math, data), x1 = 0, y1 = this._scaleY(data[0], min, max);
-        for (let i = 1; i < data.length; i++) {
-            let x2 = Math.round((i) / (data.length - 1) * 100);
-            let y2 = this._scaleY(data[i], min, max);
+        let sub = data.length > 10 ? data.slice(data.length - 11, data.length - 1): data;
+        let svg = '', min = Math.min.apply(Math, sub), max = Math.max.apply(Math, sub), x1 = 0, y1 = this._scaleY(sub[0], min, max);
+        for (let i = 1; i < sub.length; i++) {
+            let x2 = Math.round((i) / (sub.length - 1) * 100);
+            let y2 = this._scaleY(sub[i], min, max);
             svg += '<line x1=' + x1 + '% y1=' + y1 + '% x2=' + x2 + '% y2=' + y2 + '% />';
             x1 = x2;
             y1 = y2;
         }
+            
         return '<svg><g>' + svg + '</g></svg>';
     }
     _scaleY(value, min, max) {
         return max > min ? 100 - Math.round((value - min) / (max - min) * 100) : 0;
+    }
+
+    intervalItemsChange(s, e) {
+        this.setState({
+            interval: s.selectedValue
+        });
     }
 }
 setTimeout(() => {
@@ -184,4 +253,4 @@ setTimeout(() => {
         const root = ReactDOM.createRoot(container);
         root.render(<App />);
     }
-}, 10);
+}, 1000);

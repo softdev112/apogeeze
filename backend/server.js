@@ -14,10 +14,10 @@ app.use((req, res, next) => {
 // Pricing data (hardcoded for example)
 const getData = () => {
   let pricingData = [
-    { symbol: 'RDSA', name: 'Royal Dutch Shell', eventDate: '2023-11-12'},
-    { symbol: 'ULVR', name: 'Unilever', eventDate: '2023-10-25'},
+    { symbol: 'RDSA', name: 'Royal Dutch Shell', eventDate: '2023-11-12', price: 99.25},
+    { symbol: 'ULVR', name: 'Unilever', eventDate: '2023-10-25', price: 92.87},
     { symbol: 'HSBA', name: 'HSBC', eventDate: '2023-09-12', price: 88.11},
-    { symbol: 'BATS', name: 'British American Tobacco', eventDate: '2023-09-23'},
+    { symbol: 'BATS', name: 'British American Tobacco', eventDate: '2023-09-23', price: 73.11},
     { symbol: 'GSK', name: 'GlaxoSmithKline', eventDate: '2023-10-05', price: 67.38},
     { symbol: 'SAB', name: 'SABMiller', eventDate: '2023-04-11', price: 67.32},
     { symbol: 'BP', name: 'BP', eventDate: '2023-08-30', price: 63.13},
@@ -118,14 +118,14 @@ const getData = () => {
 
   let data = [];
   pricingData.forEach((e) => {
-    let price = _randBetween(1, 100000) / 100, priceHistory = price + _randBetween(0, 100) / 100;
+    // let price = _randBetween(1, 100000) / 100, priceHistory = price + _randBetween(0, 100) / 100;
     data.push({
       symbol: e.symbol,
       name: e.name,
       eventDate: e.eventDate,
-      marketPrice: price,
-      chart: price,
-      priceHistory: [priceHistory, priceHistory],
+      marketPrice: e.price,
+      chart: e.price,
+      priceHistory: [e.price, e.price],
     });
   });
 
